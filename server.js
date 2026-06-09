@@ -42,7 +42,13 @@ const TARIFFS = {
 // База пользователей (в памяти)
 const users = {};
 
-app.use(cors());
+// CORS — разрешаем все домены
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.options('*', cors());
 app.use(express.json());
 
 // Проверка что сервер работает
@@ -66,6 +72,14 @@ app.post('/api/create-payment', async (req, res) => {
       return res.status(400).json({ error: 'Неверный тариф' });
     }
 
+    // Определяем — email или телефон
+    const isEmail = email.includes('@');
+    // Если телефон — используем запасной email для чека
+    const receiptEmail = isEmail ? email : 'coachskillcourse@gmail.com';
+    const customerData = isEmail 
+      ? { email: receiptEmail }
+      : { phone: email.replace(/\D/g, '').replace(/^8/, '7') };
+
     const idempotenceKey = uuidv4();
     const credentials = Buffer.from(`${CONFIG.SHOP_ID}:${CONFIG.SECRET_KEY}`).toString('base64');
 
@@ -81,7 +95,7 @@ app.post('/api/create-payment', async (req, res) => {
       description: tariffData.description,
       metadata: { tariff, email, name: name || 'Студент' },
       receipt: {
-        customer: { email },
+        customer: customerData,
         items: [{
           description: tariffData.description,
           quantity: '1.00',
