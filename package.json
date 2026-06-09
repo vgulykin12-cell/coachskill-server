@@ -1,16 +1,16 @@
 {
   "name": "coachskill-backend",
   "version": "1.0.0",
-  "description": "Backend для курса CoachSkill — оплата через ЮKassa",
+  "description": "Backend для курса CoachSkill",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "yookassa": "^2.2.0",
     "cors": "^2.8.5",
     "nodemailer": "^6.9.7",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "node-fetch": "^2.7.0"
   }
 }
