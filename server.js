@@ -240,23 +240,44 @@ async function sendAccessEmail(email, name, password, tariff) {
       auth: { user: CONFIG.EMAIL_USER, pass: CONFIG.EMAIL_PASS }
     });
 
+    const tariffName = TARIFFS[tariff]?.name || tariff;
+    
+    // Ссылки на Telegram чаты по тарифу
+    const telegramLinks = {
+      basic: 'https://t.me/+6Rceqr0RF6U5Zjhi',
+      advanced: 'https://t.me/+PldxnonFL8tiNzZi',
+      vip: 'https://t.me/+PldxnonFL8tiNzZi'
+    };
+    const telegramLink = telegramLinks[tariff] || telegramLinks.basic;
+
     await transporter.sendMail({
       from: `"CoachSkill" <${CONFIG.EMAIL_USER}>`,
       to: email,
       subject: '🎉 Доступ к курсу активирован — CoachSkill',
       html: `
         <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;background:#111;color:#fff;padding:40px;border-radius:16px;">
-          <h1 style="color:#1a90e0;">Добро пожаловать!</h1>
-          <p style="color:#aaa;">Ты приобрёл ${TARIFFS[tariff]?.name || tariff}</p>
+          <h1 style="color:#1a90e0;">Добро пожаловать, ${name || 'студент'}!</h1>
+          <p style="color:#aaa;">Ты приобрёл ${tariffName}</p>
+          
           <div style="background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:24px;margin:24px 0;">
-            <p style="color:#666;font-size:12px;margin-bottom:8px;">ДАННЫЕ ДЛЯ ВХОДА</p>
-            <p><strong>Email:</strong> ${email}</p>
-            <p><strong>Пароль:</strong> <span style="color:#1a90e0;font-size:24px;font-weight:bold;">${password}</span></p>
+            <p style="color:#666;font-size:12px;margin-bottom:12px;letter-spacing:1px;">ДАННЫЕ ДЛЯ ВХОДА</p>
+            <p style="margin-bottom:8px;"><strong>Платформа:</strong> <a href="${CONFIG.PLATFORM_URL}" style="color:#1a90e0;">${CONFIG.PLATFORM_URL}</a></p>
+            <p style="margin-bottom:8px;"><strong>Email:</strong> ${email}</p>
+            <p><strong>Пароль:</strong> <span style="color:#1a90e0;font-size:24px;font-weight:bold;letter-spacing:2px;">${password}</span></p>
           </div>
-          <a href="${CONFIG.PLATFORM_URL}" style="display:block;background:#1a90e0;color:#fff;text-align:center;padding:16px;border-radius:10px;text-decoration:none;font-weight:bold;">
-            Войти в личный кабинет →
+
+          <a href="${CONFIG.PLATFORM_URL}" style="display:block;background:#1a90e0;color:#fff;text-align:center;padding:16px;border-radius:10px;text-decoration:none;font-weight:bold;margin-bottom:20px;">
+            🎓 Войти в личный кабинет →
           </a>
-          <p style="color:#555;font-size:13px;margin-top:24px;">Вопросы? Telegram: @Nadirbekov_coach_skill</p>
+
+          <div style="background:#1a1a1a;border:1px solid rgba(26,144,224,0.3);border-radius:12px;padding:20px;margin-bottom:24px;">
+            <p style="color:#aaa;font-size:14px;margin-bottom:12px;">📱 <strong style="color:#fff;">Вступи в закрытый чат учеников:</strong></p>
+            <a href="${telegramLink}" style="display:block;background:rgba(26,144,224,0.15);color:#1a90e0;text-align:center;padding:14px;border-radius:8px;text-decoration:none;font-weight:bold;">
+              Telegram чат → Нажми здесь
+            </a>
+          </div>
+          
+          <p style="color:#555;font-size:13px;">Вопросы? Пиши тренеру: <a href="https://t.me/Nadirbekov_coach_skill" style="color:#1a90e0;">@Nadirbekov_coach_skill</a></p>
         </div>`
     });
 
