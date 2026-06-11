@@ -3,6 +3,8 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const nodemailer = require('nodemailer');
 const fetch = require('node-fetch');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 
@@ -12,7 +14,7 @@ const app = express();
 const CONFIG = {
   SHOP_ID: process.env.SHOP_ID || '1375640',
   SECRET_KEY: process.env.SECRET_KEY || 'live_bB3mWsOvqEXb444vfspJeLPI67G-6zSGlNVT9WEgWgQ',
-  PLATFORM_URL: process.env.PLATFORM_URL || 'https://elaborate-kangaroo-eb193a.netlify.app',
+  PLATFORM_URL: process.env.PLATFORM_URL || 'https://coachskillcourse.netlify.app',
   SERVER_URL: process.env.SERVER_URL || 'https://coachskill-server.onrender.com',
   EMAIL_USER: process.env.EMAIL_USER || '',
   EMAIL_PASS: process.env.EMAIL_PASS || '',
@@ -30,19 +32,48 @@ const TARIFFS = {
   advanced: {
     name: 'Продвинутый курс',
     price: '2990.00',
-    description: 'Продвинутый курс — 9 видеоуроков, бессрочный доступ'
+    description: 'Продвинутый курс — 11 видеоуроков, бессрочный доступ'
   },
   vip: {
     name: 'VIP курс',
     price: '3990.00',
-    description: 'VIP курс — 16 видеоуроков + личная тренировка'
+    description: 'VIP курс — 18 видеоуроков + личная тренировка'
   }
 };
 
-// База пользователей (в памяти)
-const users = {};
+// ═══════════════════════════════════════
+// БАЗА ДАННЫХ (файл users.json)
+// ═══════════════════════════════════════
+const USERS_FILE = path.join(__dirname, 'users.json');
 
-// CORS — разрешаем все домены
+function loadUsers() {
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      const data = fs.readFileSync(USERS_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Ошибка загрузки users.json:', err);
+  }
+  return {};
+}
+
+function saveUsers(users) {
+  try {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
+    console.log(`💾 Сохранено пользователей: ${Object.keys(users).length}`);
+  } catch (err) {
+    console.error('Ошибка сохранения users.json:', err);
+  }
+}
+
+// Загружаем пользователей при старте
+let users = loadUsers();
+console.log(`📂 Загружено пользователей из файла: ${Object.keys(users).length}`);
+
+// ═══════════════════════════════════════
+// MIDDLEWARE
+// ═══════════════════════════════════════
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'OPTIONS'],
@@ -53,11 +84,15 @@ app.use(express.json());
 
 // Проверка что сервер работает
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', message: 'CoachSkill сервер работает!' });
+  res.json({
+    status: 'ok',
+    message: 'CoachSkill сервер работает!',
+    users_count: Object.keys(users).length
+  });
 });
 
 // ═══════════════════════════════════════
-// СОЗДАНИЕ ПЛАТЕЖА через ЮKassa API
+// СОЗДАНИЕ ПЛАТЕЖА
 // ═══════════════════════════════════════
 app.post('/api/create-payment', async (req, res) => {
   try {
@@ -72,22 +107,17 @@ app.post('/api/create-payment', async (req, res) => {
       return res.status(400).json({ error: 'Неверный тариф' });
     }
 
-    // Определяем — email или телефон
-    const isEmail = email.includes('@');
-    // Если телефон — используем запасной email для чека
-    const receiptEmail = isEmail ? email : 'coachskillcourse@gmail.com';
-    const customerData = isEmail 
-      ? { email: receiptEmail }
-      : { phone: email.replace(/\D/g, '').replace(/^8/, '7') };
-
     const idempotenceKey = uuidv4();
     const credentials = Buffer.from(`${CONFIG.SHOP_ID}:${CONFIG.SECRET_KEY}`).toString('base64');
 
+    const isEmail = email.includes('@');
+    const receiptEmail = isEmail ? email : CONFIG.EMAIL_USER;
+    const customerData = isEmail
+      ? { email: receiptEmail }
+      : { phone: email.replace(/\D/g, '').replace(/^8/, '7') };
+
     const paymentData = {
-      amount: {
-        value: tariffData.price,
-        currency: 'RUB'
-      },
+      amount: { value: tariffData.price, currency: 'RUB' },
       confirmation: {
         type: 'redirect',
         return_url: `${CONFIG.SERVER_URL}/payment/success?email=${encodeURIComponent(email)}&tariff=${tariff}&name=${encodeURIComponent(name || '')}`
@@ -126,7 +156,7 @@ app.post('/api/create-payment', async (req, res) => {
         confirmationUrl: payment.confirmation.confirmation_url
       });
     } else {
-      console.error('ЮKassa ответ:', payment);
+      console.error('ЮKassa ответ:', JSON.stringify(payment));
       res.status(500).json({ error: 'Ошибка создания платежа', details: payment });
     }
 
@@ -149,14 +179,18 @@ app.post('/webhook/yookassa', async (req, res) => {
       const { tariff, email, name } = payment.metadata;
 
       const password = generatePassword();
+
+      // Сохраняем в объект и файл
       users[email] = {
         email,
         name: name || 'Студент',
         plan: tariff,
         planName: TARIFFS[tariff]?.name || tariff,
         password,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        paymentId: payment.id
       };
+      saveUsers(users); // 💾 Сохраняем в файл
 
       console.log(`✅ Новый ученик: ${email}, тариф: ${tariff}, пароль: ${password}`);
 
@@ -194,8 +228,8 @@ app.get('/payment/success', (req, res) => {
     h1 { font-size:28px; font-weight:900; margin-bottom:12px; }
     p { color:#888; font-size:15px; line-height:1.6; margin-bottom:8px; }
     .email { color:#1a90e0; font-weight:700; }
-    .btn { display:inline-block; background:#1a90e0; color:#fff; font-size:15px; font-weight:800; padding:16px 40px; border-radius:10px; text-decoration:none; margin-top:28px; }
-    .note { background:rgba(26,144,224,0.1); border:1px solid rgba(26,144,224,0.2); border-radius:12px; padding:16px; margin-top:24px; font-size:13px; color:#aaa; text-align:left; }
+    .btn { display:block; background:#1a90e0; color:#fff; font-size:15px; font-weight:800; padding:18px 40px; border-radius:10px; text-decoration:none; margin-top:28px; }
+    .note { background:rgba(26,144,224,0.1); border:1px solid rgba(26,144,224,0.2); border-radius:12px; padding:16px; margin-top:24px; font-size:13px; color:#aaa; text-align:left; line-height:1.6; }
   </style>
 </head>
 <body>
@@ -212,17 +246,73 @@ app.get('/payment/success', (req, res) => {
 });
 
 // ═══════════════════════════════════════
-// LOGIN API для платформы
+// LOGIN API
 // ═══════════════════════════════════════
 app.post('/api/login', (req, res) => {
   const { email, password } = req.body;
-  const user = users[email];
 
+  // Перезагружаем пользователей из файла (на случай если были добавлены)
+  users = loadUsers();
+
+  const user = users[email];
   if (user && user.password === password) {
-    res.json({ success: true, user: { email: user.email, name: user.name, plan: user.plan, planName: user.planName } });
+    console.log(`🔑 Вход: ${email}`);
+    res.json({
+      success: true,
+      user: {
+        email: user.email,
+        name: user.name,
+        plan: user.plan,
+        planName: user.planName
+      }
+    });
   } else {
     res.status(401).json({ success: false, error: 'Неверный email или пароль' });
   }
+});
+
+// ═══════════════════════════════════════
+// РУЧНОЕ ДОБАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯ (для случаев когда webhook не сработал)
+// ═══════════════════════════════════════
+app.post('/api/add-user', (req, res) => {
+  const { secret, email, name, tariff, password } = req.body;
+
+  // Простая защита
+  if (secret !== 'coachskill2024admin') {
+    return res.status(403).json({ error: 'Нет доступа' });
+  }
+
+  const pwd = password || generatePassword();
+  users[email] = {
+    email,
+    name: name || 'Студент',
+    plan: tariff || 'basic',
+    planName: TARIFFS[tariff]?.name || 'Базовый курс',
+    password: pwd,
+    createdAt: new Date().toISOString(),
+    addedManually: true
+  };
+  saveUsers(users);
+
+  console.log(`👤 Добавлен вручную: ${email}, пароль: ${pwd}`);
+  res.json({ success: true, email, password: pwd });
+});
+
+// ═══════════════════════════════════════
+// СПИСОК ПОЛЬЗОВАТЕЛЕЙ (для Арсланбека)
+// ═══════════════════════════════════════
+app.get('/api/users/:secret', (req, res) => {
+  if (req.params.secret !== 'coachskill2024admin') {
+    return res.status(403).json({ error: 'Нет доступа' });
+  }
+  users = loadUsers();
+  const list = Object.values(users).map(u => ({
+    email: u.email,
+    name: u.name,
+    plan: u.planName,
+    createdAt: u.createdAt
+  }));
+  res.json({ count: list.length, users: list });
 });
 
 // ═══════════════════════════════════════
@@ -241,8 +331,7 @@ async function sendAccessEmail(email, name, password, tariff) {
     });
 
     const tariffName = TARIFFS[tariff]?.name || tariff;
-    
-    // Ссылки на Telegram чаты по тарифу
+
     const telegramLinks = {
       basic: 'https://t.me/+6Rceqr0RF6U5Zjhi',
       advanced: 'https://t.me/+PldxnonFL8tiNzZi',
@@ -257,12 +346,12 @@ async function sendAccessEmail(email, name, password, tariff) {
       html: `
         <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;background:#111;color:#fff;padding:40px;border-radius:16px;">
           <h1 style="color:#1a90e0;">Добро пожаловать, ${name || 'студент'}!</h1>
-          <p style="color:#aaa;">Ты приобрёл ${tariffName}</p>
-          
+          <p style="color:#aaa;margin-bottom:20px;">Ты приобрёл ${tariffName}</p>
+
           <div style="background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:24px;margin:24px 0;">
             <p style="color:#666;font-size:12px;margin-bottom:12px;letter-spacing:1px;">ДАННЫЕ ДЛЯ ВХОДА</p>
-            <p style="margin-bottom:8px;"><strong>Платформа:</strong> <a href="${CONFIG.PLATFORM_URL}" style="color:#1a90e0;">${CONFIG.PLATFORM_URL}</a></p>
-            <p style="margin-bottom:8px;"><strong>Email:</strong> ${email}</p>
+            <p style="margin-bottom:8px;"><strong>Сайт:</strong> <a href="${CONFIG.PLATFORM_URL}" style="color:#1a90e0;">${CONFIG.PLATFORM_URL}</a></p>
+            <p style="margin-bottom:8px;"><strong>Логин:</strong> ${email}</p>
             <p><strong>Пароль:</strong> <span style="color:#1a90e0;font-size:24px;font-weight:bold;letter-spacing:2px;">${password}</span></p>
           </div>
 
@@ -276,19 +365,23 @@ async function sendAccessEmail(email, name, password, tariff) {
               Telegram чат → Нажми здесь
             </a>
           </div>
-          
+
           <p style="color:#555;font-size:13px;">Вопросы? Пиши тренеру: <a href="https://t.me/Nadirbekov_coach_skill" style="color:#1a90e0;">@Nadirbekov_coach_skill</a></p>
         </div>`
     });
 
     console.log(`📧 Письмо отправлено: ${email}`);
   } catch (err) {
-    console.error('Ошибка email:', err);
+    console.error('Ошибка email:', err.message);
   }
 }
 
+// ═══════════════════════════════════════
+// ЗАПУСК СЕРВЕРА
+// ═══════════════════════════════════════
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Сервер запущен на порту ${PORT}`);
   console.log(`🏪 Shop ID: ${CONFIG.SHOP_ID}`);
+  console.log(`👥 Пользователей в базе: ${Object.keys(users).length}`);
 });
