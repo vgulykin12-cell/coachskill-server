@@ -272,8 +272,30 @@ app.post('/api/login', (req, res) => {
 });
 
 // ═══════════════════════════════════════
-// РУЧНОЕ ДОБАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯ (для случаев когда webhook не сработал)
+// СМЕНА ПАРОЛЯ
 // ═══════════════════════════════════════
+app.post('/api/change-password', (req, res) => {
+  const { email, currentPassword, newPassword } = req.body;
+
+  users = loadUsers();
+  const user = users[email];
+
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'Пользователь не найден' });
+  }
+  if (user.password !== currentPassword) {
+    return res.status(401).json({ success: false, error: 'Неверный текущий пароль' });
+  }
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ success: false, error: 'Пароль слишком короткий' });
+  }
+
+  users[email].password = newPassword;
+  saveUsers(users);
+
+  console.log(`🔑 Пароль изменён: ${email}`);
+  res.json({ success: true });
+});
 app.post('/api/add-user', (req, res) => {
   const { secret, email, name, tariff, password } = req.body;
 
